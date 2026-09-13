@@ -20,12 +20,15 @@ permissions:
 jobs:
   build-macos-arm64:
     # Cross-package the unsigned Apple Silicon .app on Linux. This avoids
-    # macOS hosted-runner billing and does not attempt the DMG/signing steps.
+    # macOS-only DMG/signing steps and asks Electron's installer for the
+    # darwin/arm64 runtime up front because builder.cjs uses electronDist.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       CHROME_PATH: /usr/bin/google-chrome
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      ELECTRON_INSTALL_PLATFORM: darwin
+      ELECTRON_INSTALL_ARCH: arm64
 
     steps:
       - name: Checkout
@@ -46,8 +49,13 @@ jobs:
           test -x "$CHROME_PATH"
           "$CHROME_PATH" --version
 
-      - name: Install dependencies
+      - name: Install dependencies with macOS arm64 Electron runtime
         run: npm ci
+
+      - name: Verify Electron runtime
+        run: |
+          test -d node_modules/electron/dist/Electron.app
+          file node_modules/electron/dist/Electron.app/Contents/MacOS/Electron
 
       - name: Run tests
         run: npm test
