@@ -1,4 +1,4 @@
-name: Build macOS DMG
+name: Build macOS arm64 on Linux
 
 on:
   push:
@@ -19,10 +19,12 @@ permissions:
 
 jobs:
   build-macos-arm64:
-    runs-on: macos-latest
+    # Cross-package the unsigned Apple Silicon .app on Linux. This avoids
+    # macOS hosted-runner billing and does not attempt the DMG/signing steps.
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      CHROME_PATH: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+      CHROME_PATH: /usr/bin/google-chrome
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
     steps:
@@ -39,7 +41,6 @@ jobs:
         run: |
           uname -a
           uname -m
-          sw_vers
           node --version
           npm --version
           test -x "$CHROME_PATH"
@@ -51,19 +52,34 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Build Apple Silicon DMG
-        run: npm run desktop:pack:mac
+      - name: Prepare desktop payload
+        run: npm run desktop:prepare
 
-      - name: Inspect output
+      - name: Cross-package Apple Silicon app
+        run: npx electron-builder --config desktop/builder.cjs --mac --arm64 --dir --publish never
+
+      - name: Package app as ZIP
+        shell: bash
         run: |
-          ls -lah release
-          file release/*.dmg
-          shasum -a 256 release/*.dmg
+          set -euo pipefail
+          APP="$(find release -maxdepth 3 -type d -name '*.app' -print -quit)"
+          test -n "$APP"
+          echo "App bundle: $APP"
+          find "$APP/Contents/MacOS" -maxdepth 1 -type f -exec file {} \;
+          VERSION="$(node -p "require('./package.json').version")"
+          OUT="$GITHUB_WORKSPACE/release/DirectorDesk-${VERSION}-mac-arm64.zip"
+          cd "$(dirname "$APP")"
+          zip -qry --symlinks "$OUT" "$(basename "$APP")"
+          cd "$GITHUB_WORKSPACE"
+          ls -lh "$OUT"
+          sha256sum "$OUT" | tee "$OUT.sha256"
 
-      - name: Upload DMG
+      - name: Upload macOS app ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: DirectorDesk-macOS-arm64
-          path: release/*.dmg
+          name: DirectorDesk-macOS-arm64-linux-cross
+          path: |
+            release/DirectorDesk-*-mac-arm64.zip
+            release/DirectorDesk-*-mac-arm64.zip.sha256
           if-no-files-found: error
           retention-days: 14
