@@ -1,0 +1,67 @@
+name: Build macOS DMG
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mac-build.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'src/**'
+      - 'desktop/**'
+      - 'public/**'
+      - 'skills/**'
+      - 'scripts/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos-arm64:
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      CHROME_PATH: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Show runner info
+        run: |
+          uname -a
+          node --version
+          npm --version
+          test -x "$CHROME_PATH"
+          "$CHROME_PATH" --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build Apple Silicon DMG
+        run: npm run desktop:pack:mac
+
+      - name: Inspect output
+        run: |
+          ls -lah release
+          file release/*.dmg
+          shasum -a 256 release/*.dmg
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: DirectorDesk-macOS-arm64
+          path: release/*.dmg
+          if-no-files-found: error
+          retention-days: 14
